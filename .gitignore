@@ -1,4 +1,5 @@
-/components/
+/components/**
+!/components/boards
 !/components/boards/custom_board.h
 /external/
 /external_tools/
