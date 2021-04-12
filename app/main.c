@@ -26,14 +26,11 @@
 NRF_BLE_SCAN_DEF(m_scan);
 
 typedef struct {
-    uint8_t len;
-    uint8_t data[31];
+    uint8_t mac[6];
+    uint8_t adv_data[31];
+    uint8_t name[15];
+    int rssi;
 } scan_record_t;
-
-bool scan_enable = true;
-bool scan_finished = false;
-uint16_t scan_records_count = 0;
-scan_record_t scan_records[RECORDS_COUNT_MAX];
 
 static void uart_init(void);
 static void uart_event_handle(app_uart_evt_t * p_event);
@@ -48,8 +45,8 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt);
 static void scan_init(void);
 static void scan_start(void);
 static void scan_stop(void);
-static void scan_records_output(void);
-// static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report);
+static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name);
+static void scan_record_show(const scan_record_t *record);
 
 int main()
 {
@@ -152,13 +149,6 @@ static void idle_state_handle(void)
     if (NRF_LOG_PROCESS() == false)
     {
         nrf_pwr_mgmt_run();
-        if (scan_finished)
-        {
-            scan_records_output();
-            scan_records_count = 0;
-            scan_finished = false;
-            // scan_start();
-        }
     }
 }
 
@@ -178,19 +168,9 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
         
             NRF_LOG_INFO("Connected.");
 
-            // err_code = ble_nus_c_handles_assign(&m_ble_nus_c, p_ble_evt->evt.gap_evt.conn_handle, NULL);
-            // APP_ERROR_CHECK(err_code);
-
             err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
             APP_ERROR_CHECK(err_code);
 
-            // m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-            // err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr, m_conn_handle);
-            // APP_ERROR_CHECK(err_code);
-
-            // // start discovery of services. The NUS Client waits for a discovery result
-            // err_code = ble_db_discovery_start(&m_db_disc, p_ble_evt->evt.gap_evt.conn_handle);
-            // APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
@@ -283,66 +263,37 @@ static void ble_stack_init(void)
 static void scan_evt_handler(scan_evt_t const * p_scan_evt)
 {
     ble_gap_evt_adv_report_t const * p_adv;
-    uint8_t *record;
+    scan_record_t record = {0};
     uint8_t i;
-    uint8_t record_len;
 
     switch(p_scan_evt->scan_evt_id)
     {
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
         {
             p_adv = p_scan_evt->params.p_not_found;
-            printf("adv_data: ");
-            for (int i = 0; i < p_adv->data.len; i++)
+            memset(&record, 0, sizeof(record));
+            for (i = 0; i < 6; i++)
             {
-                printf(" %02X", p_adv->data.p_data[i]);
+                record.mac[i] = p_adv->peer_addr.addr[5-i];
             }
-            printf("\r\n");
-            nrf_delay_ms(10);
-            // if ((!scan_finished) && (scan_enable))
+            for (i = 0; i < p_adv->data.len; i++)
+            {
+                record.adv_data[i] = p_adv->data.p_data[i];
+            }
+            if (find_adv_name(p_adv, record.name) == NRF_ERROR_NOT_FOUND)
+            {
+                record.name[0] = 'N';
+                record.name[1] = '/';
+                record.name[2] = 'A';
+            }
+            record.rssi = p_adv->rssi;
+            scan_record_show(&record);
+            // for (i = 0; i < sizeof(record); i++)
             // {
-            //     p_adv = p_scan_evt->params.p_not_found;
-            //     record = p_adv->data.p_data;
-            //     record_len = p_adv->data.len;
-            //     for (i = 0; i < record_len; i++)
-            //     {
-            //         scan_records[scan_records_count].len++;
-            //         scan_records[scan_records_count].data[i] = record[i];
-            //     }
-            //     if (scan_records_count < RECORDS_COUNT_MAX)
-            //     {
-            //         scan_records_count++;
-            //     }
-            //     else
-            //     {
-            //         scan_stop();
-            //         scan_finished = true;
-            //     }
+            //     app_uart_put(*(((uint8_t *)&record)+i));
             // }
-            // else
-            // {
-            //     scan_stop();
-            // }
+            nrf_delay_ms(100);
 
-            // if (find_adv_name(p_adv) == NRF_SUCCESS)
-            // {
-                // Scan is automatically stopped by the connection.
-            // printf(" MAC: %02x%02x%02x%02x%02x%02x",
-            //         p_adv->peer_addr.addr[5],
-            //         p_adv->peer_addr.addr[4],
-            //         p_adv->peer_addr.addr[3],
-            //         p_adv->peer_addr.addr[2],
-            //         p_adv->peer_addr.addr[1],
-            //         p_adv->peer_addr.addr[0]
-            //         );
-            // printf(" RSSI: %d", p_adv->rssi);
-            // printf(" adv_data:");
-            // for (int i = 0; i < p_adv->data.len; i++)
-            // {
-            //     printf("%02X ", *(p_adv->data.p_data + i));
-            // }
-            // printf("\r\n");
-            // }
         } break;
 
         case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
@@ -379,12 +330,6 @@ static void scan_init(void)
 
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
-
-    // err_code = nrf_ble_scan_filter_set(&m_scan, SCAN_UUID_FILTER, &m_nus_uuid);
-    // APP_ERROR_CHECK(err_code);
-
-    // err_code = nrf_ble_scan_filters_enable(&m_scan, NRF_BLE_SCAN_UUID_FILTER, false);
-    // APP_ERROR_CHECK(err_code);
 }
 
 /**@brief Function to start scanning. */
@@ -410,46 +355,47 @@ static void scan_stop(void)
     APP_ERROR_CHECK(ret);
 }
 
-static void scan_records_output(void)
+static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name)
 {
-    uint16_t count;
-    uint8_t cur_len, len;
+    uint8_t *p_data = p_adv_report->data.p_data;
+    uint8_t index = 0, i;
+    uint8_t field_len, field_type;
 
-    for (count = 0; count < scan_records_count; count++)
+    while (index < p_adv_report->data.len)
     {
-        cur_len = scan_records[count].len;
-        printf("adv_data: ");
-        for (len = 0; len < cur_len; len++)
+        field_len = p_data[index];
+        field_type = p_data[index + 1];
+        if ((field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME) ||
+            (field_type == BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME))
         {
-            printf("%02X ", *(scan_records[count].data+len));
+            for (i = 0; i < field_len-1; i++)
+            {
+                name[i] = p_adv_report->data.p_data[index + 2 + i];
+            }
+            return NRF_SUCCESS;
         }
-        printf("\r\n");
-        nrf_delay_ms(10);
+        index += field_len + 1;
     }
+
+    return NRF_ERROR_NOT_FOUND;
 }
 
-// static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report)
-// {
-//     uint8_t *p_data = p_adv_report->data.p_data;
-//     uint8_t index = 0;
-//     uint8_t field_length, field_type;
+static void scan_record_show(const scan_record_t *record)
+{
+    uint8_t i;
 
-//     while (index < p_adv_report->data.len)
-//     {
-//         field_length = p_data[index];
-//         field_type = p_data[index+1];
-//         if ((field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME) || 
-//             (field_type == BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME))
-//         {
-//             printf("name:");
-//             for (uint8_t i = 0; i < field_length; i++)
-//             {
-//                 app_uart_put(p_data[index+2+i]);
-//                 return NRF_SUCCESS;
-//             }
-//         }
-//         index += field_length + 1;
-//     }
-
-//     return NRF_ERROR_NOT_FOUND;
-// }
+    printf("Name: %s\r\n", record->name);
+    printf("Rssi: %d\r\n", record->rssi);
+    printf("Mac: ");
+    for (i = 0; i < 5; i++)
+    {
+        printf("%02X ", record->mac[i]);
+    }
+    printf("\r\n");
+    printf("Adv_data: ");
+    for (i = 0; i < 31; i++)
+    {
+        printf("%02X ", record->adv_data[i]);
+    }
+    printf("\r\n\r\n");
+}
