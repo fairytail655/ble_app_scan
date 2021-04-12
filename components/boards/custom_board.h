@@ -4,7 +4,7 @@
  * @Author: Fox_benjiaming
  * @Date: 2021-04-07 15:32:31
  * @LastEditors: Fox_benjiaming
- * @LastEditTime: 2021-04-12 15:09:26
+ * @LastEditTime: 2021-04-12 20:02:15
  */
 #ifndef CUSTOM_BOARD_H
 #define CUSTOM_BOARD_H
@@ -37,10 +37,8 @@ extern "C" {
 
 #define BUTTONS_NUMBER 1
 
-#define BUTTON_START   11
 #define BUTTON_1       11
-#define BUTTON_STOP    11
-#define BUTTON_PULL    NRF_GPIO_PIN_PULLDOWN
+#define BUTTON_PULL    NRF_GPIO_PIN_PULLUP
 
 #define BUTTONS_ACTIVE_STATE 0
 
@@ -53,5 +51,9 @@ extern "C" {
 #define CTS_PIN_NUMBER 7
 #define RTS_PIN_NUMBER 5
 #define HWFC           false
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

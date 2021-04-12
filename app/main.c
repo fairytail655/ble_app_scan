@@ -16,13 +16,17 @@
 #include "nrf_ble_scan.h"
 #include "nrf_drv_gpiote.h"
 
+#define BTN_ID_SLEEP                0   /**< ID of the button used to put the application into sleep/system OFF mode. */
+#define BTN_ID_WAKEUP               0   /**< ID of the button used to wake up the application. */
+// #define BTN_ID_RESET                1   /**< ID of the button used to reset the application. */
+
 #define UART_TX_BUF_SIZE        1024                                    /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
 
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< Tag that refers to the BLE stack configuration set with @ref sd_ble_cfg_set. The default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< BLE observer priority of the application. There is no need to modify this value. */
 
-#define RECORDS_COUNT_MAX       50
+#define RECORDS_COUNT_MAX       500
 
 NRF_BLE_SCAN_DEF(m_scan);
 
@@ -40,11 +44,12 @@ static uint8_t scan_pin_level = 0;
 static uint32_t filter_mac[RECORDS_COUNT_MAX];
 static uint16_t filter_count = 0;
 
+static void bsp_evt_handler(bsp_event_t evt);
+static void bsp_configuration(void);
 static void uart_init(void);
 static void uart_event_handle(app_uart_evt_t * p_event);
 static void log_init(void);
 static void timer_init(void);
-static void leds_init(void);
 static void power_management_init(void);
 static void idle_state_handle(void);
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context);
@@ -66,17 +71,55 @@ int main()
     power_management_init();
     ble_stack_init();
     scan_init();
-    leds_init();
+    bsp_configuration();
 
     printf("Hello world!\r\n");
     NRF_LOG_INFO("BLE UART central example started.");
-
-    // scan_start();
 
     for (;;)
     {
         idle_state_handle();
     }
+}
+
+static void bsp_evt_handler(bsp_event_t evt)
+{
+    switch (evt)
+    {
+    case BSP_EVENT_WAKEUP:
+        scan_pin_level = 1;
+        scan_start();
+        NRF_LOG_INFO("Scan started");
+        // NRF_LOG_INFO("wake");
+        break;
+    case BSP_EVENT_SLEEP:
+        scan_stop();
+        filter_count = 0;
+        scan_pin_level = 0;
+        NRF_LOG_INFO("Scan stoped");
+        // NRF_LOG_INFO("sleep");
+        break;
+    default:
+        NRF_LOG_ERROR("Unknow bsp_evt");
+        return; // no implementation needed
+    }
+}
+
+static void bsp_configuration(void)
+{
+    ret_code_t err_code;
+
+    err_code = bsp_init(BSP_INIT_LEDS|BSP_INIT_BUTTONS, bsp_evt_handler);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = bsp_event_to_button_action_assign(BTN_ID_SLEEP,
+                                                 BSP_BUTTON_ACTION_RELEASE,
+                                                 BSP_EVENT_SLEEP);
+    APP_ERROR_CHECK(err_code);
+    err_code = bsp_event_to_button_action_assign(BTN_ID_WAKEUP,
+                                                 BSP_BUTTON_ACTION_PUSH,
+                                                 BSP_EVENT_WAKEUP);
+    APP_ERROR_CHECK(err_code);
 }
 
 /**@brief Function for initializing the UART. */
@@ -113,7 +156,7 @@ static void uart_init(void)
  */
 static void uart_event_handle(app_uart_evt_t * p_event)
 {
-
+    // NRF_LOG_WARNING("uart received invalid");
 }
 
 /**@brief Function for initializing the nrf log module. */
@@ -129,15 +172,6 @@ static void log_init(void)
 static void timer_init(void)
 {
     ret_code_t err_code = app_timer_init();
-    APP_ERROR_CHECK(err_code);
-}
-
-/**@brief Function for initializing leds. */
-static void leds_init(void)
-{
-    ret_code_t err_code;
-
-    err_code = bsp_init(BSP_INIT_LEDS, NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -323,13 +357,13 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
                 record.section.rssi = p_adv->rssi;
                 if (check_update(record.section.mac) == true)
                 {
-                    scan_record_show(&record);
-                    // for (i = 0; i < sizeof(record.data); i++)
-                    // {
-                    //     app_uart_put(record.data[i]);
-                    // }
-                    // app_uart_put('\r');
-                    // app_uart_put('\n');
+                    // scan_record_show(&record);
+                    for (i = 0; i < sizeof(record.data); i++)
+                    {
+                        app_uart_put(record.data[i]);
+                    }
+                    app_uart_put('\r');
+                    app_uart_put('\n');
                     nrf_delay_ms(10);
                 }
             }
@@ -389,7 +423,7 @@ static void scan_init(void)
         .timeout = 0,
         .scan_phys = BLE_GAP_PHY_1MBPS,
     };
-    nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(false);
+    // nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(false);
 
     memset(&init_scan, 0, sizeof(init_scan));
     init_scan.connect_if_match = false;
@@ -398,13 +432,13 @@ static void scan_init(void)
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
 
-    err_code = nrf_drv_gpiote_init();
-    APP_ERROR_CHECK(err_code);
+    // err_code = nrf_drv_gpiote_init();
+    // APP_ERROR_CHECK(err_code);
 
-    in_config_toggle.pull = NRF_GPIO_PIN_PULLDOWN;
-    err_code = nrf_drv_gpiote_in_init(BUTTON_1, &in_config_toggle, scan_enable_handler);
-    APP_ERROR_CHECK(err_code);
-    nrf_drv_gpiote_in_event_enable(BUTTON_1, true);
+    // in_config_toggle.pull = NRF_GPIO_PIN_PULLDOWN;
+    // err_code = nrf_drv_gpiote_in_init(BUTTON_1, &in_config_toggle, scan_enable_handler);
+    // APP_ERROR_CHECK(err_code);
+    // nrf_drv_gpiote_in_event_enable(BUTTON_1, true);
 }
 
 /**@brief Function to start scanning. */
