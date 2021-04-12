@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "nrf_drv_uart.h": "c",
+        "nrfx.h": "c",
+        "nrfx_config.h": "c",
+        "sdk_config.h": "c",
+        "boards.h": "c",
+        "nrf_ble_qwr.h": "c",
+        "limits": "cpp"
+    }
+}

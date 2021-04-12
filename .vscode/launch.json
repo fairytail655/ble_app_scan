@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "cwd": "${workspaceFolder}",
+            "type": "cortex-debug",
+            "request": "launch",
+            "name": "openocd-launch",
+            "executable": "./project/GNU/_build/nrf52832_xxaa.out",
+            "runToMain": true,
+            "svdFile": "./modules/nrfx/mdk/nrf52.svd",
+            /* jlink */
+            "servertype": "jlink",
+            "interface": "swd",
+            "device": "nRF52832_xxAA"
+        },
+    ]
+}
