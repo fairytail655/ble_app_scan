@@ -6,6 +6,7 @@
         "sdk_config.h": "c",
         "boards.h": "c",
         "nrf_ble_qwr.h": "c",
-        "limits": "cpp"
+        "limits": "cpp",
+        "bsp.h": "c"
     }
 }

@@ -1,4 +1,5 @@
 /components/
+!/components/boards/custom_board.h
 /external/
 /external_tools/
 /integration/
