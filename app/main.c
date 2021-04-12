@@ -14,6 +14,7 @@
 #include "nrf_sdh_ble.h"
 #include "nrf_ble_qwr.h"
 #include "nrf_ble_scan.h"
+#include "nrf_drv_gpiote.h"
 
 #define UART_TX_BUF_SIZE        1024                                    /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
@@ -310,6 +311,11 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
     }
 }
 
+static void scan_enable_handler(void)
+{
+    printf("haha");
+}
+
 /**@brief Function for initializing the scanning and setting the filters.
  */
 static void scan_init(void)
@@ -324,15 +330,19 @@ static void scan_init(void)
         .timeout = 0,
         .scan_phys = BLE_GAP_PHY_1MBPS,
     };
+    nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true);
 
     memset(&init_scan, 0, sizeof(init_scan));
-
     init_scan.connect_if_match = false;
     init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
     init_scan.p_scan_param = &m_scan_param;
-
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
+
+    in_config_toggle.pull = NRF_GPIO_PIN_PULLDOWN;
+    err_code = nrf_drv_gpiote_in_init(BUTTON_1, &in_config_toggle, scan_enable_handler);
+    APP_ERROR_CHECK(err_code);
+    nrf_drv_gpiote_in_event_enable(BUTTON_1, true);
 }
 
 /**@brief Function to start scanning. */
