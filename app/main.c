@@ -37,6 +37,8 @@ typedef union{
 } scan_record_t;
 
 static uint8_t scan_pin_level = 0;
+static uint32_t filter_mac[RECORDS_COUNT_MAX];
+static uint16_t filter_count = 0;
 
 static void uart_init(void);
 static void uart_event_handle(app_uart_evt_t * p_event);
@@ -54,6 +56,7 @@ static void scan_start(void);
 static void scan_stop(void);
 static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name);
 static void scan_record_show(const scan_record_t *record);
+static bool check_update(uint8_t *mac);
 
 int main()
 {
@@ -265,6 +268,29 @@ static void ble_stack_init(void)
     NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
 }
 
+static bool check_update(uint8_t *mac)
+{
+    uint32_t mac_total = 0;
+    uint8_t i;
+
+    for (i = 0; i < 6; i++)
+    {
+        mac_total <<= 8;
+        mac_total += mac[i];
+    }
+
+    for (i = 0; i < filter_count; i++)
+    {
+        if (mac_total == filter_mac[i])
+        {
+            return false;
+        }
+    }
+    filter_mac[filter_count++] = mac_total;
+
+    return true;
+}
+
 /**@brief Function for handling Scanning Module events.
  */
 static void scan_evt_handler(scan_evt_t const * p_scan_evt)
@@ -277,30 +303,41 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
     {
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
         {
-            p_adv = p_scan_evt->params.p_not_found;
-            for (i = 0; i < 6; i++)
+            if (filter_count < RECORDS_COUNT_MAX)
             {
-                record.section.mac[i] = p_adv->peer_addr.addr[5-i];
+                p_adv = p_scan_evt->params.p_not_found;
+                for (i = 0; i < 6; i++)
+                {
+                    record.section.mac[i] = p_adv->peer_addr.addr[5-i];
+                }
+                for (i = 0; i < p_adv->data.len; i++)
+                {
+                    record.section.adv_data[i] = p_adv->data.p_data[i];
+                }
+                if (find_adv_name(p_adv, record.section.name) == NRF_ERROR_NOT_FOUND)
+                {
+                    record.section.name[0] = 'N';
+                    record.section.name[1] = '/';
+                    record.section.name[2] = 'A';
+                }
+                record.section.rssi = p_adv->rssi;
+                if (check_update(record.section.mac) == true)
+                {
+                    scan_record_show(&record);
+                    // for (i = 0; i < sizeof(record.data); i++)
+                    // {
+                    //     app_uart_put(record.data[i]);
+                    // }
+                    // app_uart_put('\r');
+                    // app_uart_put('\n');
+                    nrf_delay_ms(10);
+                }
             }
-            for (i = 0; i < p_adv->data.len; i++)
+            else
             {
-                record.section.adv_data[i] = p_adv->data.p_data[i];
+                filter_count = 0;
+                scan_stop();
             }
-            if (find_adv_name(p_adv, record.section.name) == NRF_ERROR_NOT_FOUND)
-            {
-                record.section.name[0] = 'N';
-                record.section.name[1] = '/';
-                record.section.name[2] = 'A';
-            }
-            record.section.rssi = p_adv->rssi;
-            // scan_record_show(&record);
-            for (i = 0; i < sizeof(record.data); i++)
-            {
-                app_uart_put(record.data[i]);
-            }
-            app_uart_put('\r');
-            app_uart_put('\n');
-            nrf_delay_ms(10);
         } break;
 
         case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
@@ -330,6 +367,7 @@ static void scan_enable_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t act
             else
             {
                 scan_stop();
+                filter_count = 0;
                 scan_pin_level = 0;
                 NRF_LOG_INFO("Scan stoped\r\n");
             }
