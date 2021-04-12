@@ -36,6 +36,8 @@ typedef union{
     uint8_t data[60];
 } scan_record_t;
 
+static uint8_t scan_pin_level = 0;
+
 static void uart_init(void);
 static void uart_event_handle(app_uart_evt_t * p_event);
 static void log_init(void);
@@ -46,6 +48,7 @@ static void idle_state_handle(void);
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context);
 static void ble_stack_init(void);
 static void scan_evt_handler(scan_evt_t const * p_scan_evt);
+static void scan_enable_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action);
 static void scan_init(void);
 static void scan_start(void);
 static void scan_stop(void);
@@ -65,7 +68,7 @@ int main()
     printf("Hello world!\r\n");
     NRF_LOG_INFO("BLE UART central example started.");
 
-    scan_start();
+    // scan_start();
 
     for (;;)
     {
@@ -311,9 +314,27 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
     }
 }
 
-static void scan_enable_handler(void)
+static void scan_enable_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 {
-    printf("haha");
+    if (nrf_gpio_pin_read(pin) != scan_pin_level)
+    {
+        nrf_delay_ms(20);
+        if (nrf_gpio_pin_read(pin) != scan_pin_level)
+        {
+            if (nrf_gpio_pin_read(pin))
+            {
+                scan_pin_level = 1;
+                scan_start();
+                NRF_LOG_INFO("Scan started\r\n");
+            }
+            else
+            {
+                scan_stop();
+                scan_pin_level = 0;
+                NRF_LOG_INFO("Scan stoped\r\n");
+            }
+        }
+    }
 }
 
 /**@brief Function for initializing the scanning and setting the filters.
@@ -330,13 +351,16 @@ static void scan_init(void)
         .timeout = 0,
         .scan_phys = BLE_GAP_PHY_1MBPS,
     };
-    nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true);
+    nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(false);
 
     memset(&init_scan, 0, sizeof(init_scan));
     init_scan.connect_if_match = false;
     init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
     init_scan.p_scan_param = &m_scan_param;
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_gpiote_init();
     APP_ERROR_CHECK(err_code);
 
     in_config_toggle.pull = NRF_GPIO_PIN_PULLDOWN;
