@@ -25,11 +25,14 @@
 
 NRF_BLE_SCAN_DEF(m_scan);
 
-typedef struct {
-    uint8_t mac[6];
-    uint8_t adv_data[31];
-    uint8_t name[15];
-    int rssi;
+typedef union{
+    struct {
+        uint8_t mac[6];
+        uint8_t adv_data[31];
+        uint8_t name[22];
+        int8_t rssi;
+    } section;
+    uint8_t data[60];
 } scan_record_t;
 
 static void uart_init(void);
@@ -271,29 +274,29 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
         {
             p_adv = p_scan_evt->params.p_not_found;
-            memset(&record, 0, sizeof(record));
             for (i = 0; i < 6; i++)
             {
-                record.mac[i] = p_adv->peer_addr.addr[5-i];
+                record.section.mac[i] = p_adv->peer_addr.addr[5-i];
             }
             for (i = 0; i < p_adv->data.len; i++)
             {
-                record.adv_data[i] = p_adv->data.p_data[i];
+                record.section.adv_data[i] = p_adv->data.p_data[i];
             }
-            if (find_adv_name(p_adv, record.name) == NRF_ERROR_NOT_FOUND)
+            if (find_adv_name(p_adv, record.section.name) == NRF_ERROR_NOT_FOUND)
             {
-                record.name[0] = 'N';
-                record.name[1] = '/';
-                record.name[2] = 'A';
+                record.section.name[0] = 'N';
+                record.section.name[1] = '/';
+                record.section.name[2] = 'A';
             }
-            record.rssi = p_adv->rssi;
-            scan_record_show(&record);
-            // for (i = 0; i < sizeof(record); i++)
-            // {
-            //     app_uart_put(*(((uint8_t *)&record)+i));
-            // }
-            nrf_delay_ms(100);
-
+            record.section.rssi = p_adv->rssi;
+            // scan_record_show(&record);
+            for (i = 0; i < sizeof(record.data); i++)
+            {
+                app_uart_put(record.data[i]);
+            }
+            app_uart_put('\r');
+            app_uart_put('\n');
+            nrf_delay_ms(10);
         } break;
 
         case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
@@ -384,18 +387,18 @@ static void scan_record_show(const scan_record_t *record)
 {
     uint8_t i;
 
-    printf("Name: %s\r\n", record->name);
-    printf("Rssi: %d\r\n", record->rssi);
+    printf("Name: %s\r\n", record->section.name);
+    printf("Rssi: %d\r\n", record->section.rssi);
     printf("Mac: ");
-    for (i = 0; i < 5; i++)
+    for (i = 0; i < 6; i++)
     {
-        printf("%02X ", record->mac[i]);
+        printf("%02X ", record->section.mac[i]);
     }
     printf("\r\n");
     printf("Adv_data: ");
     for (i = 0; i < 31; i++)
     {
-        printf("%02X ", record->adv_data[i]);
+        printf("%02X ", record->section.adv_data[i]);
     }
     printf("\r\n\r\n");
 }
