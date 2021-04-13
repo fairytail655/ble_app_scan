@@ -14,13 +14,12 @@
 #include "nrf_sdh_ble.h"
 #include "nrf_ble_qwr.h"
 #include "nrf_ble_scan.h"
-#include "nrf_drv_gpiote.h"
 
 #define BTN_ID_SLEEP                0   /**< ID of the button used to put the application into sleep/system OFF mode. */
 #define BTN_ID_WAKEUP               0   /**< ID of the button used to wake up the application. */
 // #define BTN_ID_RESET                1   /**< ID of the button used to reset the application. */
 
-#define UART_TX_BUF_SIZE        1024                                    /**< UART TX buffer size. */
+#define UART_TX_BUF_SIZE        2048                                    /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
 
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< Tag that refers to the BLE stack configuration set with @ref sd_ble_cfg_set. The default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
@@ -28,7 +27,7 @@
 
 #define RECORDS_COUNT_MAX       500
 
-NRF_BLE_SCAN_DEF(m_scan);
+#define TIMER_MS                20
 
 typedef union{
     struct {
@@ -40,28 +39,33 @@ typedef union{
     uint8_t data[60];
 } scan_record_t;
 
-static uint8_t scan_pin_level = 0;
-static uint32_t filter_mac[RECORDS_COUNT_MAX];
-static uint16_t filter_count = 0;
+NRF_BLE_SCAN_DEF(m_scan);
+
+static scan_record_t records[RECORDS_COUNT_MAX];
+static uint8_t records_count = 0;
+
+APP_TIMER_DEF(timer_transmit);
+static uint32_t timer_transmit_tick = APP_TIMER_TICKS(TIMER_MS);
 
 static void bsp_evt_handler(bsp_event_t evt);
 static void bsp_configuration(void);
 static void uart_init(void);
 static void uart_event_handle(app_uart_evt_t * p_event);
 static void log_init(void);
+static void timer_transmit_event_handler(void *p_context);
 static void timer_init(void);
 static void power_management_init(void);
 static void idle_state_handle(void);
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context);
 static void ble_stack_init(void);
 static void scan_evt_handler(scan_evt_t const * p_scan_evt);
-static void scan_enable_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action);
 static void scan_init(void);
 static void scan_start(void);
 static void scan_stop(void);
+static void scan_transmit_start(void);
+static void scan_transmit_stop(void);
 static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name);
-static void scan_record_show(const scan_record_t *record);
-static bool check_update(uint8_t *mac);
+static bool check_update(const uint8_t *mac);
 
 int main()
 {
@@ -87,15 +91,13 @@ static void bsp_evt_handler(bsp_event_t evt)
     switch (evt)
     {
     case BSP_EVENT_WAKEUP:
-        scan_pin_level = 1;
         scan_start();
         NRF_LOG_INFO("Scan started");
         // NRF_LOG_INFO("wake");
         break;
     case BSP_EVENT_SLEEP:
         scan_stop();
-        filter_count = 0;
-        scan_pin_level = 0;
+        scan_transmit_start();
         NRF_LOG_INFO("Scan stoped");
         // NRF_LOG_INFO("sleep");
         break;
@@ -168,10 +170,49 @@ static void log_init(void)
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 }
 
+static void timer_transmit_event_handler(void *p_context)
+{
+    uint8_t i;
+
+    if (records_count > 0)
+    {
+        records_count--;
+
+        // for (i = 0; i < sizeof(records->data); i++)
+        // {
+        //     app_uart_put(records[records_count].data[i]);
+        // }
+        // app_uart_put('\r');
+        // app_uart_put('\n');
+
+        printf("Name: %s\r\n", records[records_count].section.name);
+        printf("Rssi: %d\r\n", records[records_count].section.rssi);
+        printf("Mac: ");
+        for (i = 0; i < 6; i++)
+        {
+            printf("%02X ", records[records_count].section.mac[i]);
+        }
+        printf("\r\n");
+        printf("Adv_data: ");
+        for (i = 0; i < 31; i++)
+        {
+            printf("%02X ", records[records_count].section.adv_data[i]);
+        }
+        printf("\r\n\r\n");
+    }
+    else
+    {
+        scan_transmit_stop();
+    }
+}
+
 /**@brief Function for initializing the timer. */
 static void timer_init(void)
 {
     ret_code_t err_code = app_timer_init();
+    APP_ERROR_CHECK(err_code);
+
+    err_code = app_timer_create(&timer_transmit, APP_TIMER_MODE_REPEATED, timer_transmit_event_handler);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -179,8 +220,7 @@ static void timer_init(void)
  */
 static void power_management_init(void)
 {
-    ret_code_t err_code;
-    err_code = nrf_pwr_mgmt_init();
+    ret_code_t err_code= nrf_pwr_mgmt_init();
     APP_ERROR_CHECK(err_code);
 }
 
@@ -302,25 +342,24 @@ static void ble_stack_init(void)
     NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
 }
 
-static bool check_update(uint8_t *mac)
+static bool check_update(const uint8_t *mac)
 {
-    uint32_t mac_total = 0;
-    uint8_t i;
+    uint16_t i, j;
 
-    for (i = 0; i < 6; i++)
+    for (i = 0; i < records_count; i++)
     {
-        mac_total <<= 8;
-        mac_total += mac[i];
-    }
-
-    for (i = 0; i < filter_count; i++)
-    {
-        if (mac_total == filter_mac[i])
+        for (j = 0; j < 6; j++)
+        {
+            if (mac[j] != records[i].section.mac[5-j])
+            {
+                break;
+            }
+        }
+        if (j == 6)
         {
             return false;
         }
     }
-    filter_mac[filter_count++] = mac_total;
 
     return true;
 }
@@ -330,46 +369,46 @@ static bool check_update(uint8_t *mac)
 static void scan_evt_handler(scan_evt_t const * p_scan_evt)
 {
     ble_gap_evt_adv_report_t const * p_adv;
-    scan_record_t record = {0};
     uint8_t i;
 
     switch(p_scan_evt->scan_evt_id)
     {
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
         {
-            if (filter_count < RECORDS_COUNT_MAX)
+            if (records_count < RECORDS_COUNT_MAX)
             {
                 p_adv = p_scan_evt->params.p_not_found;
-                for (i = 0; i < 6; i++)
+                if (check_update(p_adv->peer_addr.addr) == true)
                 {
-                    record.section.mac[i] = p_adv->peer_addr.addr[5-i];
-                }
-                for (i = 0; i < p_adv->data.len; i++)
-                {
-                    record.section.adv_data[i] = p_adv->data.p_data[i];
-                }
-                if (find_adv_name(p_adv, record.section.name) == NRF_ERROR_NOT_FOUND)
-                {
-                    record.section.name[0] = 'N';
-                    record.section.name[1] = '/';
-                    record.section.name[2] = 'A';
-                }
-                record.section.rssi = p_adv->rssi;
-                if (check_update(record.section.mac) == true)
-                {
-                    // scan_record_show(&record);
-                    for (i = 0; i < sizeof(record.data); i++)
+                    for (i = 0; i < 6; i++)
                     {
-                        app_uart_put(record.data[i]);
+                        records[records_count].section.mac[i] = p_adv->peer_addr.addr[5-i];
                     }
-                    app_uart_put('\r');
-                    app_uart_put('\n');
-                    nrf_delay_ms(10);
+                    for (i = 0; i < p_adv->data.len; i++)
+                    {
+                        records[records_count].section.adv_data[i] = p_adv->data.p_data[i];
+                    }
+                    if (find_adv_name(p_adv, records[records_count].section.name) == NRF_ERROR_NOT_FOUND)
+                    {
+                        records[records_count].section.name[0] = 'N';
+                        records[records_count].section.name[1] = '/';
+                        records[records_count].section.name[2] = 'A';
+                        records[records_count].section.name[3] = '\0';
+                    }
+                    records[records_count].section.rssi = p_adv->rssi;
+                    records_count++;
+                    // for (i = 0; i < sizeof(records[records_count].data); i++)
+                    // {
+                    //     app_uart_put(records[records_count].data[i]);
+                    // }
+                    // app_uart_put('\r');
+                    // app_uart_put('\n');
+                    // nrf_delay_ms(10);
                 }
             }
             else
             {
-                filter_count = 0;
+                NRF_LOG_INFO("Scan data space is full");
                 scan_stop();
             }
         } break;
@@ -385,30 +424,6 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
     }
 }
 
-static void scan_enable_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
-{
-    if (nrf_gpio_pin_read(pin) != scan_pin_level)
-    {
-        nrf_delay_ms(20);
-        if (nrf_gpio_pin_read(pin) != scan_pin_level)
-        {
-            if (nrf_gpio_pin_read(pin))
-            {
-                scan_pin_level = 1;
-                scan_start();
-                NRF_LOG_INFO("Scan started\r\n");
-            }
-            else
-            {
-                scan_stop();
-                filter_count = 0;
-                scan_pin_level = 0;
-                NRF_LOG_INFO("Scan stoped\r\n");
-            }
-        }
-    }
-}
-
 /**@brief Function for initializing the scanning and setting the filters.
  */
 static void scan_init(void)
@@ -417,10 +432,11 @@ static void scan_init(void)
     nrf_ble_scan_init_t init_scan;
     const ble_gap_scan_params_t m_scan_param = {
         .active = 0x00,
-        .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
+        // .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
+        .interval = 1600,
         .window = NRF_BLE_SCAN_SCAN_WINDOW,
         .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
-        .timeout = 0,
+        .timeout = NRF_BLE_SCAN_SCAN_DURATION,
         .scan_phys = BLE_GAP_PHY_1MBPS,
     };
     // nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(false);
@@ -431,14 +447,6 @@ static void scan_init(void)
     init_scan.p_scan_param = &m_scan_param;
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
-
-    // err_code = nrf_drv_gpiote_init();
-    // APP_ERROR_CHECK(err_code);
-
-    // in_config_toggle.pull = NRF_GPIO_PIN_PULLDOWN;
-    // err_code = nrf_drv_gpiote_in_init(BUTTON_1, &in_config_toggle, scan_enable_handler);
-    // APP_ERROR_CHECK(err_code);
-    // nrf_drv_gpiote_in_event_enable(BUTTON_1, true);
 }
 
 /**@brief Function to start scanning. */
@@ -489,22 +497,14 @@ static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint
     return NRF_ERROR_NOT_FOUND;
 }
 
-static void scan_record_show(const scan_record_t *record)
+static void scan_transmit_start(void)
 {
-    uint8_t i;
+    ret_code_t err_code = app_timer_start(timer_transmit, timer_transmit_tick, NULL);
+    APP_ERROR_CHECK(err_code);
+}
 
-    printf("Name: %s\r\n", record->section.name);
-    printf("Rssi: %d\r\n", record->section.rssi);
-    printf("Mac: ");
-    for (i = 0; i < 6; i++)
-    {
-        printf("%02X ", record->section.mac[i]);
-    }
-    printf("\r\n");
-    printf("Adv_data: ");
-    for (i = 0; i < 31; i++)
-    {
-        printf("%02X ", record->section.adv_data[i]);
-    }
-    printf("\r\n\r\n");
+static void scan_transmit_stop(void)
+{
+    ret_code_t err_code = app_timer_stop(timer_transmit);
+    APP_ERROR_CHECK(err_code);
 }
