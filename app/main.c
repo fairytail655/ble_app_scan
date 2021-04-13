@@ -97,7 +97,7 @@ static void bsp_evt_handler(bsp_event_t evt)
         break;
     case BSP_EVENT_SLEEP:
         scan_stop();
-        scan_transmit_start();
+        // scan_transmit_start();
         NRF_LOG_INFO("Scan stoped");
         // NRF_LOG_INFO("sleep");
         break;
@@ -185,20 +185,20 @@ static void timer_transmit_event_handler(void *p_context)
         // app_uart_put('\r');
         // app_uart_put('\n');
 
-        printf("Name: %s\r\n", records[records_count].section.name);
-        printf("Rssi: %d\r\n", records[records_count].section.rssi);
-        printf("Mac: ");
-        for (i = 0; i < 6; i++)
-        {
-            printf("%02X ", records[records_count].section.mac[i]);
-        }
-        printf("\r\n");
-        printf("Adv_data: ");
-        for (i = 0; i < 31; i++)
-        {
-            printf("%02X ", records[records_count].section.adv_data[i]);
-        }
-        printf("\r\n\r\n");
+        // printf("Name: %s\r\n", records[records_count].section.name);
+        // printf("Rssi: %d\r\n", records[records_count].section.rssi);
+        // printf("Mac: ");
+        // for (i = 0; i < 6; i++)
+        // {
+        //     printf("%02X ", records[records_count].section.mac[i]);
+        // }
+        // printf("\r\n");
+        // printf("Adv_data: ");
+        // for (i = 0; i < 31; i++)
+        // {
+        //     printf("%02X ", records[records_count].section.adv_data[i]);
+        // }
+        // printf("\r\n\r\n");
     }
     else
     {
