@@ -7,4 +7,4 @@
 /modules/
 /project/GNU/_build/
 /project/MDK5/
-log.txt
+*.txt

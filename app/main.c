@@ -2,9 +2,9 @@
 #include "boards.h"
 #include "bsp.h"
 
-#include "app_uart.h"
 #include "app_timer.h"
 
+#include "nrf_uart.h"
 #include "nrf_delay.h"
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -17,10 +17,6 @@
 
 #define BTN_ID_SLEEP                0   /**< ID of the button used to put the application into sleep/system OFF mode. */
 #define BTN_ID_WAKEUP               0   /**< ID of the button used to wake up the application. */
-// #define BTN_ID_RESET                1   /**< ID of the button used to reset the application. */
-
-#define UART_TX_BUF_SIZE        2048                                    /**< UART TX buffer size. */
-#define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
 
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< Tag that refers to the BLE stack configuration set with @ref sd_ble_cfg_set. The default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< BLE observer priority of the application. There is no need to modify this value. */
@@ -50,9 +46,7 @@ static uint32_t timer_transmit_tick = APP_TIMER_TICKS(TIMER_MS);
 static void bsp_evt_handler(bsp_event_t evt);
 static void bsp_configuration(void);
 static void uart_init(void);
-static void uart_event_handle(app_uart_evt_t * p_event);
 static void log_init(void);
-static void timer_transmit_event_handler(void *p_context);
 static void timer_init(void);
 static void power_management_init(void);
 static void idle_state_handle(void);
@@ -62,8 +56,7 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt);
 static void scan_init(void);
 static void scan_start(void);
 static void scan_stop(void);
-static void scan_transmit_start(void);
-static void scan_transmit_stop(void);
+static void scan_transmit(void);
 static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name);
 static bool check_update(const uint8_t *mac);
 
@@ -77,7 +70,6 @@ int main()
     scan_init();
     bsp_configuration();
 
-    printf("Hello world!\r\n");
     NRF_LOG_INFO("BLE UART central example started.");
 
     for (;;)
@@ -97,7 +89,6 @@ static void bsp_evt_handler(bsp_event_t evt)
         break;
     case BSP_EVENT_SLEEP:
         scan_stop();
-        // scan_transmit_start();
         NRF_LOG_INFO("Scan stoped");
         // NRF_LOG_INFO("sleep");
         break;
@@ -124,41 +115,20 @@ static void bsp_configuration(void)
     APP_ERROR_CHECK(err_code);
 }
 
+static void uart_transmit(uint8_t data)
+{
+    nrf_uart_txd_set(NRF_UART0, data);
+    while (nrf_uart_event_check(NRF_UART0, NRF_UART_EVENT_TXDRDY) == false);
+    nrf_uart_event_clear(NRF_UART0, NRF_UART_EVENT_TXDRDY);
+}
+
 /**@brief Function for initializing the UART. */
 static void uart_init(void)
 {
-    ret_code_t err_code;
-
-    app_uart_comm_params_t const comm_params =
-    {
-        .rx_pin_no    = RX_PIN_NUMBER,
-        .tx_pin_no    = TX_PIN_NUMBER,
-        .rts_pin_no   = RTS_PIN_NUMBER,
-        .cts_pin_no   = CTS_PIN_NUMBER,
-        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
-        .use_parity   = false,
-        .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud115200
-    };
-
-    APP_UART_FIFO_INIT(&comm_params,
-                       UART_RX_BUF_SIZE,
-                       UART_TX_BUF_SIZE,
-                       uart_event_handle,
-                       APP_IRQ_PRIORITY_LOWEST,
-                       err_code);
-
-    APP_ERROR_CHECK(err_code);
-}
-
-/**@brief   Function for handling app_uart events.
- *
- * @details This function receives a single character from the app_uart module and appends it to
- *          a string. The string is sent over BLE when the last character received is a
- *          'new line' '\n' (hex 0x0A) or if the string reaches the maximum data length.
- */
-static void uart_event_handle(app_uart_evt_t * p_event)
-{
-    // NRF_LOG_WARNING("uart received invalid");
+    nrf_uart_configure(NRF_UART0, NRF_UART_PARITY_EXCLUDED, NRF_UART_HWFC_DISABLED);
+    nrf_uart_baudrate_set(NRF_UART0, NRF_UART_BAUDRATE_115200);
+    nrf_uart_txrx_pins_set(NRF_UART0, TX_PIN_NUMBER, RX_PIN_NUMBER);
+    nrf_uart_enable(NRF_UART0);
 }
 
 /**@brief Function for initializing the nrf log module. */
@@ -170,49 +140,10 @@ static void log_init(void)
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 }
 
-static void timer_transmit_event_handler(void *p_context)
-{
-    uint8_t i;
-
-    if (records_count > 0)
-    {
-        records_count--;
-
-        // for (i = 0; i < sizeof(records->data); i++)
-        // {
-        //     app_uart_put(records[records_count].data[i]);
-        // }
-        // app_uart_put('\r');
-        // app_uart_put('\n');
-
-        // printf("Name: %s\r\n", records[records_count].section.name);
-        // printf("Rssi: %d\r\n", records[records_count].section.rssi);
-        // printf("Mac: ");
-        // for (i = 0; i < 6; i++)
-        // {
-        //     printf("%02X ", records[records_count].section.mac[i]);
-        // }
-        // printf("\r\n");
-        // printf("Adv_data: ");
-        // for (i = 0; i < 31; i++)
-        // {
-        //     printf("%02X ", records[records_count].section.adv_data[i]);
-        // }
-        // printf("\r\n\r\n");
-    }
-    else
-    {
-        scan_transmit_stop();
-    }
-}
-
 /**@brief Function for initializing the timer. */
 static void timer_init(void)
 {
     ret_code_t err_code = app_timer_init();
-    APP_ERROR_CHECK(err_code);
-
-    err_code = app_timer_create(&timer_transmit, APP_TIMER_MODE_REPEATED, timer_transmit_event_handler);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -432,8 +363,8 @@ static void scan_init(void)
     nrf_ble_scan_init_t init_scan;
     const ble_gap_scan_params_t m_scan_param = {
         .active = 0x00,
-        // .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
-        .interval = 1600,
+        .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
+        // .interval = 1600,
         .window = NRF_BLE_SCAN_SCAN_WINDOW,
         .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
         .timeout = NRF_BLE_SCAN_SCAN_DURATION,
@@ -497,14 +428,12 @@ static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint
     return NRF_ERROR_NOT_FOUND;
 }
 
-static void scan_transmit_start(void)
+static void scan_transmit(void)
 {
-    ret_code_t err_code = app_timer_start(timer_transmit, timer_transmit_tick, NULL);
-    APP_ERROR_CHECK(err_code);
-}
+    uint8_t data[200];
+    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTTX);
+    
+    
 
-static void scan_transmit_stop(void)
-{
-    ret_code_t err_code = app_timer_stop(timer_transmit);
-    APP_ERROR_CHECK(err_code);
+    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STOPTX);
 }
