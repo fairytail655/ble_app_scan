@@ -22,17 +22,16 @@
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< BLE observer priority of the application. There is no need to modify this value. */
 
 #define RECORDS_COUNT_MAX       500
-
-#define TIMER_MS                20
+#define RECORD_NAME_MAX         22
 
 typedef union{
     struct {
         uint8_t mac[6];
         uint8_t adv_data[31];
-        uint8_t name[22];
+        uint8_t name[RECORD_NAME_MAX];
         int8_t rssi;
     } section;
-    uint8_t data[60];
+    uint8_t data[38+RECORD_NAME_MAX];
 } scan_record_t;
 
 NRF_BLE_SCAN_DEF(m_scan);
@@ -40,11 +39,9 @@ NRF_BLE_SCAN_DEF(m_scan);
 static scan_record_t records[RECORDS_COUNT_MAX];
 static uint8_t records_count = 0;
 
-APP_TIMER_DEF(timer_transmit);
-static uint32_t timer_transmit_tick = APP_TIMER_TICKS(TIMER_MS);
-
 static void bsp_evt_handler(bsp_event_t evt);
 static void bsp_configuration(void);
+static void uart_transmit(uint8_t data);
 static void uart_init(void);
 static void log_init(void);
 static void timer_init(void);
@@ -90,6 +87,7 @@ static void bsp_evt_handler(bsp_event_t evt)
     case BSP_EVENT_SLEEP:
         scan_stop();
         NRF_LOG_INFO("Scan stoped");
+        scan_transmit();
         // NRF_LOG_INFO("sleep");
         break;
     default:
@@ -328,13 +326,6 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
                     }
                     records[records_count].section.rssi = p_adv->rssi;
                     records_count++;
-                    // for (i = 0; i < sizeof(records[records_count].data); i++)
-                    // {
-                    //     app_uart_put(records[records_count].data[i]);
-                    // }
-                    // app_uart_put('\r');
-                    // app_uart_put('\n');
-                    // nrf_delay_ms(10);
                 }
             }
             else
@@ -416,10 +407,11 @@ static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint
         if ((field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME) ||
             (field_type == BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME))
         {
-            for (i = 0; i < field_len-1; i++)
+            for (i = 0; i < field_len-1 && i < RECORD_NAME_MAX-1; i++)
             {
                 name[i] = p_adv_report->data.p_data[index + 2 + i];
             }
+            name[i] = '\0';
             return NRF_SUCCESS;
         }
         index += field_len + 1;
@@ -430,10 +422,72 @@ static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint
 
 static void scan_transmit(void)
 {
-    uint8_t data[200];
+    uint8_t data[200] = {0};
+    uint8_t adv_data[63] = {0};
+    uint8_t mac[13] = {0};
+    uint8_t i, count;
+    uint16_t j;
+
     nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTTX);
     
-    
+    sprintf((char *)data, "{\"params\": {\"list\": [");
+    count = strlen((const char *)data);
+    for (i = 0; i < count; i++)
+    {
+        uart_transmit(data[i]);
+    }
+
+    for(j = 0; j < records_count; j++)
+    {
+        // memset(data, 0, sizeof(data));
+        for (i = 0; i < sizeof(records[j].section.adv_data); i++)
+        {
+            sprintf((char *)(adv_data+i*2), "%02X", records[j].section.adv_data[i]);
+        }
+        for (i = 0; i < sizeof(records[j].section.mac); i++)
+        {
+            sprintf((char *)(mac+i*2), "%02X", records[j].section.mac[i]);
+        }
+        if (j == records_count-1)
+        {
+            sprintf( 
+                (char *)data, 
+                "{\"rssi\": \"%d\","
+                "\"advdata\": \"%s\","
+                "\"scandata\": \"\","
+                "\"name\": \"%s\","
+                "\"mac\": \"%s\"}",
+                records[j].section.rssi,
+                adv_data,
+                records[j].section.name,
+                mac
+            );
+        }
+        else
+        {
+            sprintf(
+                (char *)data, 
+                "{\"rssi\": \"%d\","
+                "\"advdata\": \"%s\","
+                "\"scandata\": \"\","
+                "\"name\": \"%s\","
+                "\"mac\": \"%s\"},",
+                records[j].section.rssi,
+                adv_data,
+                records[j].section.name,
+                mac
+            );
+        }
+        count = strlen((const char *)data);
+        for (i = 0; i < count; i++)
+        {
+            uart_transmit(data[i]);
+        }
+    }
+
+    uart_transmit(']');
+    uart_transmit('}');
+    uart_transmit('}');
 
     nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STOPTX);
 }
