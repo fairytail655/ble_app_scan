@@ -354,8 +354,9 @@ static void scan_init(void)
     nrf_ble_scan_init_t init_scan;
     const ble_gap_scan_params_t m_scan_param = {
         .active = 0x00,
-        .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
-        // .interval = 1600,
+        // .interval = NRF_BLE_SCAN_SCAN_INTERVAL,
+        // .interval = 320,
+        .interval = 160,
         .window = NRF_BLE_SCAN_SCAN_WINDOW,
         .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
         .timeout = NRF_BLE_SCAN_SCAN_DURATION,
@@ -436,6 +437,55 @@ static void scan_transmit(void)
     {
         uart_transmit(data[i]);
     }
+
+    // for(j = 0; j < RECORDS_COUNT_MAX; j++)
+    // {
+    //     // memset(data, 0, sizeof(data));
+    //     for (i = 0; i < sizeof(records[0].section.adv_data); i++)
+    //     {
+    //         sprintf((char *)(adv_data+i*2), "%02X", records[0].section.adv_data[i]);
+    //     }
+    //     for (i = 0; i < sizeof(records[0].section.mac); i++)
+    //     {
+    //         sprintf((char *)(mac+i*2), "%02X", records[0].section.mac[i]);
+    //     }
+    //     if (j == RECORDS_COUNT_MAX-1)
+    //     {
+    //         sprintf( 
+    //             (char *)data, 
+    //             "{\"rssi\": \"%d\","
+    //             "\"advdata\": \"%s\","
+    //             "\"scandata\": \"\","
+    //             "\"name\": \"%s\","
+    //             "\"mac\": \"%s\"}",
+    //             records[0].section.rssi,
+    //             adv_data,
+    //             records[0].section.name,
+    //             mac
+    //         );
+    //     }
+    //     else
+    //     {
+    //         sprintf(
+    //             (char *)data, 
+    //             "{\"rssi\": \"%d\","
+    //             "\"advdata\": \"%s\","
+    //             "\"scandata\": \"\","
+    //             "\"name\": \"%s\","
+    //             "\"mac\": \"%s\"},",
+    //             records[0].section.rssi,
+    //             adv_data,
+    //             records[0].section.name,
+    //             mac
+    //         );
+    //     }
+    //     count = strlen((const char *)data);
+    //     for (i = 0; i < count; i++)
+    //     {
+    //         uart_transmit(data[i]);
+    //     }
+    
+    // }
 
     for(j = 0; j < records_count; j++)
     {
