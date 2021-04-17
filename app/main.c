@@ -38,10 +38,12 @@ NRF_BLE_SCAN_DEF(m_scan);
 
 static scan_record_t records[RECORDS_COUNT_MAX];
 static uint8_t records_count = 0;
+static int records_rssi;
 
 static void bsp_evt_handler(bsp_event_t evt);
 static void bsp_configuration(void);
 static void uart_transmit(uint8_t data);
+static void uart_receive(uint8_t *data, uint16_t *len, uint32_t timeout_us);
 static void uart_init(void);
 static void log_init(void);
 static void timer_init(void);
@@ -118,6 +120,29 @@ static void uart_transmit(uint8_t data)
     nrf_uart_txd_set(NRF_UART0, data);
     while (nrf_uart_event_check(NRF_UART0, NRF_UART_EVENT_TXDRDY) == false);
     nrf_uart_event_clear(NRF_UART0, NRF_UART_EVENT_TXDRDY);
+}
+
+static void uart_receive(uint8_t *data, uint16_t *len, uint32_t timeout_us)
+{
+    uint32_t i = 0;
+
+    *len = 0;
+    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTRX);
+    while (i < timeout_us)
+    {
+        if (nrf_uart_event_check(NRF_UART0, NRF_UART_EVENT_RXDRDY) == true)
+        {
+            nrf_uart_event_clear(NRF_UART0, NRF_UART_EVENT_RXDRDY);
+            data[(*len)++] = nrf_uart_rxd_get(NRF_UART0);
+            i = 0;
+        }
+        else
+        {
+            i++;
+            nrf_delay_us(1);
+        }
+    }
+    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STOPRX);
 }
 
 /**@brief Function for initializing the UART. */
@@ -307,7 +332,7 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
             if (records_count < RECORDS_COUNT_MAX)
             {
                 p_adv = p_scan_evt->params.p_not_found;
-                if (check_update(p_adv->peer_addr.addr) == true)
+                if ((p_adv->rssi >= records_rssi) && (check_update(p_adv->peer_addr.addr) == true))
                 {
                     for (i = 0; i < 6; i++)
                     {
@@ -376,9 +401,24 @@ static void scan_init(void)
 static void scan_start(void)
 {
     ret_code_t ret;
+    uint16_t len = 0;
+    char rssi[10] = {0};
 
-    /* Reset count */
+    /* Reset variable */
     records_count = 0;
+    records_rssi = -120;
+
+    /* Receive max rssi */
+    uart_receive((uint8_t *)rssi, &len, 1000000);
+    if (len > 0)
+    {
+        rssi[len] = '\0';
+        records_rssi = atoi(rssi);
+        if (records_rssi == 0)
+        {
+            records_rssi = -120;
+        }
+    }
 
     ret = nrf_ble_scan_start(&m_scan);
     APP_ERROR_CHECK(ret);
@@ -441,6 +481,7 @@ static void scan_transmit(void)
         uart_transmit(data[i]);
     }
 
+    /* Transmit 500 records to test */
     // for(j = 0; j < RECORDS_COUNT_MAX; j++)
     // {
     //     // memset(data, 0, sizeof(data));
