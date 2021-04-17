@@ -377,6 +377,9 @@ static void scan_start(void)
 {
     ret_code_t ret;
 
+    /* Reset count */
+    records_count = 0;
+
     ret = nrf_ble_scan_start(&m_scan);
     APP_ERROR_CHECK(ret);
 
