@@ -174,7 +174,7 @@
 
 // <o> NRF_BLE_SCAN_SCAN_INTERVAL - Scanning interval. Determines the scan interval in units of 0.625 millisecond. 
 #ifndef NRF_BLE_SCAN_SCAN_INTERVAL
-#define NRF_BLE_SCAN_SCAN_INTERVAL 1600
+#define NRF_BLE_SCAN_SCAN_INTERVAL 160
 #endif
 
 // <o> NRF_BLE_SCAN_SCAN_DURATION - Duration of a scanning session in units of 10 ms. Range: 0x0001 - 0xFFFF (10 ms to 10.9225 ms). If set to 0x0000, the scanning continues until it is explicitly disabled. 
@@ -184,7 +184,7 @@
 
 // <o> NRF_BLE_SCAN_SCAN_WINDOW - Scanning window. Determines the scanning window in units of 0.625 millisecond. 
 #ifndef NRF_BLE_SCAN_SCAN_WINDOW
-#define NRF_BLE_SCAN_SCAN_WINDOW 160
+#define NRF_BLE_SCAN_SCAN_WINDOW 80
 #endif
 
 // <o> NRF_BLE_SCAN_MIN_CONNECTION_INTERVAL - Determines minimum connection interval in milliseconds. 
@@ -194,7 +194,7 @@
 
 // <o> NRF_BLE_SCAN_MAX_CONNECTION_INTERVAL - Determines maximum connection interval in milliseconds. 
 #ifndef NRF_BLE_SCAN_MAX_CONNECTION_INTERVAL
-#define NRF_BLE_SCAN_MAX_CONNECTION_INTERVAL 30
+#define NRF_BLE_SCAN_MAX_CONNECTION_INTERVAL 7
 #endif
 
 // <o> NRF_BLE_SCAN_SLAVE_LATENCY - Determines the slave latency in counts of connection events. 
@@ -226,7 +226,7 @@
 #endif
 // <o> NRF_BLE_SCAN_UUID_CNT - Number of filters for UUIDs. 
 #ifndef NRF_BLE_SCAN_UUID_CNT
-#define NRF_BLE_SCAN_UUID_CNT 1
+#define NRF_BLE_SCAN_UUID_CNT 0
 #endif
 
 // <o> NRF_BLE_SCAN_NAME_CNT - Number of name filters. 
@@ -1543,7 +1543,7 @@
 #endif
 // <o> GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS - Number of lower power input pins 
 #ifndef GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS
-#define GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS 2
+#define GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS 4
 #endif
 
 // <o> GPIOTE_CONFIG_IRQ_PRIORITY  - Interrupt priority
@@ -2073,7 +2073,7 @@
 #endif
 // <o> NRFX_GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS - Number of lower power input pins 
 #ifndef NRFX_GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS
-#define NRFX_GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS 2
+#define NRFX_GPIOTE_CONFIG_NUM_OF_LOW_POWER_EVENTS 1
 #endif
 
 // <o> NRFX_GPIOTE_CONFIG_IRQ_PRIORITY  - Interrupt priority
@@ -2094,7 +2094,7 @@
 // <e> NRFX_GPIOTE_CONFIG_LOG_ENABLED - Enables logging in the module.
 //==========================================================
 #ifndef NRFX_GPIOTE_CONFIG_LOG_ENABLED
-#define NRFX_GPIOTE_CONFIG_LOG_ENABLED 1
+#define NRFX_GPIOTE_CONFIG_LOG_ENABLED 0
 #endif
 // <o> NRFX_GPIOTE_CONFIG_LOG_LEVEL  - Default Severity level
  
@@ -4009,7 +4009,7 @@
 // <3=> 32 bit 
 
 #ifndef NRFX_TIMER_DEFAULT_CONFIG_BIT_WIDTH
-#define NRFX_TIMER_DEFAULT_CONFIG_BIT_WIDTH 3
+#define NRFX_TIMER_DEFAULT_CONFIG_BIT_WIDTH 0
 #endif
 
 // <o> NRFX_TIMER_DEFAULT_CONFIG_IRQ_PRIORITY  - Interrupt priority
@@ -4439,7 +4439,7 @@
 // <e> NRFX_UARTE_ENABLED - nrfx_uarte - UARTE peripheral driver
 //==========================================================
 #ifndef NRFX_UARTE_ENABLED
-#define NRFX_UARTE_ENABLED 0
+#define NRFX_UARTE_ENABLED 1
 #endif
 // <o> NRFX_UARTE0_ENABLED - Enable UARTE0 instance 
 #ifndef NRFX_UARTE0_ENABLED
@@ -4501,7 +4501,7 @@
 // <7=> 7 
 
 #ifndef NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY
-#define NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY 3
+#define NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY 6
 #endif
 
 // <e> NRFX_UARTE_CONFIG_LOG_ENABLED - Enables logging in the module.
@@ -4564,7 +4564,7 @@
 #endif
 // <o> NRFX_UART0_ENABLED - Enable UART0 instance 
 #ifndef NRFX_UART0_ENABLED
-#define NRFX_UART0_ENABLED 1
+#define NRFX_UART0_ENABLED 0
 #endif
 
 // <o> NRFX_UART_DEFAULT_CONFIG_HWFC  - Hardware Flow Control
@@ -5685,7 +5685,7 @@
 // <3=> 32 bit 
 
 #ifndef TIMER_DEFAULT_CONFIG_BIT_WIDTH
-#define TIMER_DEFAULT_CONFIG_BIT_WIDTH 3
+#define TIMER_DEFAULT_CONFIG_BIT_WIDTH 0
 #endif
 
 // <o> TIMER_DEFAULT_CONFIG_IRQ_PRIORITY  - Interrupt priority
@@ -5709,7 +5709,7 @@
  
 
 #ifndef TIMER0_ENABLED
-#define TIMER0_ENABLED 1
+#define TIMER0_ENABLED 0
 #endif
 
 // <q> TIMER1_ENABLED  - Enable TIMER1 instance
@@ -6151,7 +6151,7 @@
  
 
 #ifndef APP_GPIOTE_ENABLED
-#define APP_GPIOTE_ENABLED 1
+#define APP_GPIOTE_ENABLED 0
 #endif
 
 // <q> APP_PWM_ENABLED  - app_pwm - PWM functionality

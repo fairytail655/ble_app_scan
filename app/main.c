@@ -3,8 +3,8 @@
 #include "bsp.h"
 
 #include "app_timer.h"
+#include "app_uart.h"
 
-#include "nrf_uart.h"
 #include "nrf_delay.h"
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -21,7 +21,10 @@
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< Tag that refers to the BLE stack configuration set with @ref sd_ble_cfg_set. The default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< BLE observer priority of the application. There is no need to modify this value. */
 
-#define RECORDS_COUNT_MAX       500
+#define UART_TX_BUF_SIZE        32768                                   /**< UART TX buffer size. */
+#define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
+
+// #define RECORDS_COUNT_MAX       500
 #define RECORD_NAME_MAX         22
 
 typedef union{
@@ -36,14 +39,12 @@ typedef union{
 
 NRF_BLE_SCAN_DEF(m_scan);
 
-static scan_record_t records[RECORDS_COUNT_MAX];
-static uint8_t records_count = 0;
+// static scan_record_t records[RECORDS_COUNT_MAX];
+// static uint8_t records_count = 0;
 static int records_rssi;
 
 static void bsp_evt_handler(bsp_event_t evt);
 static void bsp_configuration(void);
-static void uart_transmit(uint8_t data);
-static void uart_receive(uint8_t *data, uint16_t *len, uint32_t timeout_us);
 static void uart_init(void);
 static void log_init(void);
 static void timer_init(void);
@@ -55,21 +56,20 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt);
 static void scan_init(void);
 static void scan_start(void);
 static void scan_stop(void);
-static void scan_transmit(void);
 static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint8_t *name);
-static bool check_update(const uint8_t *mac);
 
 int main()
 {
-    uart_init();
     log_init();
     timer_init();
+    uart_init();
     power_management_init();
     ble_stack_init();
     scan_init();
     bsp_configuration();
 
     NRF_LOG_INFO("BLE UART central example started.");
+    printf("Hello world!\r\n");
 
     for (;;)
     {
@@ -82,14 +82,11 @@ static void bsp_evt_handler(bsp_event_t evt)
     switch (evt)
     {
     case BSP_EVENT_WAKEUP:
-        scan_start();
         NRF_LOG_INFO("Scan started");
         // NRF_LOG_INFO("wake");
         break;
     case BSP_EVENT_SLEEP:
-        scan_stop();
         NRF_LOG_INFO("Scan stoped");
-        scan_transmit();
         // NRF_LOG_INFO("sleep");
         break;
     default:
@@ -115,43 +112,60 @@ static void bsp_configuration(void)
     APP_ERROR_CHECK(err_code);
 }
 
-static void uart_transmit(uint8_t data)
+/**@brief   Function for handling app_uart events.
+ *
+ * @details This function receives a single character from the app_uart module and appends it to
+ *          a string. The string is sent over BLE when the last character received is a
+ *          'new line' '\n' (hex 0x0A) or if the string reaches the maximum data length.
+ */
+void uart_event_handle(app_uart_evt_t * p_event)
 {
-    nrf_uart_txd_set(NRF_UART0, data);
-    while (nrf_uart_event_check(NRF_UART0, NRF_UART_EVENT_TXDRDY) == false);
-    nrf_uart_event_clear(NRF_UART0, NRF_UART_EVENT_TXDRDY);
-}
-
-static void uart_receive(uint8_t *data, uint16_t *len, uint32_t timeout_us)
-{
-    uint32_t i = 0;
-
-    *len = 0;
-    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTRX);
-    while (i < timeout_us)
+    switch (p_event->evt_type)
     {
-        if (nrf_uart_event_check(NRF_UART0, NRF_UART_EVENT_RXDRDY) == true)
-        {
-            nrf_uart_event_clear(NRF_UART0, NRF_UART_EVENT_RXDRDY);
-            data[(*len)++] = nrf_uart_rxd_get(NRF_UART0);
-            i = 0;
-        }
-        else
-        {
-            i++;
-            nrf_delay_us(1);
-        }
+        /**@snippet [Handling data from UART] */
+        case APP_UART_DATA_READY:
+            break;
+
+        /**@snippet [Handling data from UART] */
+        case APP_UART_COMMUNICATION_ERROR:
+            NRF_LOG_ERROR("Communication error occurred while handling UART.");
+            APP_ERROR_HANDLER(p_event->data.error_communication);
+            break;
+
+        case APP_UART_FIFO_ERROR:
+            NRF_LOG_ERROR("Error occurred in FIFO module used by UART.");
+            APP_ERROR_HANDLER(p_event->data.error_code);
+            break;
+
+        default:
+            break;
     }
-    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STOPRX);
 }
 
 /**@brief Function for initializing the UART. */
 static void uart_init(void)
 {
-    nrf_uart_configure(NRF_UART0, NRF_UART_PARITY_EXCLUDED, NRF_UART_HWFC_DISABLED);
-    nrf_uart_baudrate_set(NRF_UART0, NRF_UART_BAUDRATE_115200);
-    nrf_uart_txrx_pins_set(NRF_UART0, TX_PIN_NUMBER, RX_PIN_NUMBER);
-    nrf_uart_enable(NRF_UART0);
+    ret_code_t err_code;
+
+    app_uart_comm_params_t const comm_params =
+    {
+        .rx_pin_no    = RX_PIN_NUMBER,
+        .tx_pin_no    = TX_PIN_NUMBER,
+        .rts_pin_no   = RTS_PIN_NUMBER,
+        .cts_pin_no   = CTS_PIN_NUMBER,
+        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
+        .use_parity   = false,
+        .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud115200
+    };
+
+    APP_UART_FIFO_INIT(&comm_params,
+                       UART_RX_BUF_SIZE,
+                       UART_TX_BUF_SIZE,
+                       uart_event_handle,
+                       APP_IRQ_PRIORITY_LOWEST,
+                       err_code);
+
+    APP_ERROR_CHECK(err_code);
 }
 
 /**@brief Function for initializing the nrf log module. */
@@ -296,74 +310,43 @@ static void ble_stack_init(void)
     NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
 }
 
-static bool check_update(const uint8_t *mac)
-{
-    uint16_t i, j;
-
-    for (i = 0; i < records_count; i++)
-    {
-        for (j = 0; j < 6; j++)
-        {
-            if (mac[j] != records[i].section.mac[5-j])
-            {
-                break;
-            }
-        }
-        if (j == 6)
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 /**@brief Function for handling Scanning Module events.
  */
 static void scan_evt_handler(scan_evt_t const * p_scan_evt)
 {
+    // scan_record_t record;
     ble_gap_evt_adv_report_t const * p_adv;
-    uint8_t i;
+    // uint8_t i;
 
     switch(p_scan_evt->scan_evt_id)
     {
         case NRF_BLE_SCAN_EVT_NOT_FOUND:
         {
-            if (records_count < RECORDS_COUNT_MAX)
-            {
-                p_adv = p_scan_evt->params.p_not_found;
-                if ((p_adv->rssi >= records_rssi) && (check_update(p_adv->peer_addr.addr) == true))
-                {
-                    for (i = 0; i < 6; i++)
-                    {
-                        records[records_count].section.mac[i] = p_adv->peer_addr.addr[5-i];
-                    }
-                    for (i = 0; i < p_adv->data.len; i++)
-                    {
-                        records[records_count].section.adv_data[i] = p_adv->data.p_data[i];
-                    }
-                    if (find_adv_name(p_adv, records[records_count].section.name) == NRF_ERROR_NOT_FOUND)
-                    {
-                        records[records_count].section.name[0] = 'N';
-                        records[records_count].section.name[1] = '/';
-                        records[records_count].section.name[2] = 'A';
-                        records[records_count].section.name[3] = '\0';
-                    }
-                    records[records_count].section.rssi = p_adv->rssi;
-                    records_count++;
-                }
-            }
-            else
-            {
-                NRF_LOG_INFO("Scan data space is full");
-                scan_stop();
-            }
+            p_adv = p_scan_evt->params.p_not_found;
+            // if ((p_adv->rssi >= records_rssi) && (check_update(p_adv->peer_addr.addr) == true))
+            // {
+            //     for (i = 0; i < 6; i++)
+            //     {
+            //         record.section.mac[i] = p_adv->peer_addr.addr[5-i];
+            //     }
+            //     for (i = 0; i < p_adv->data.len; i++)
+            //     {
+            //         record.section.adv_data[i] = p_adv->data.p_data[i];
+            //     }
+            //     if (find_adv_name(p_adv, record.section.name) == NRF_ERROR_NOT_FOUND)
+            //     {
+            //         record.section.name[0] = 'N';
+            //         record.section.name[1] = '/';
+            //         record.section.name[2] = 'A';
+            //         record.section.name[3] = '\0';
+            //     }
+            //     record.section.rssi = p_adv->rssi;
+            // }
         } break;
 
         case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
         {
             NRF_LOG_INFO("Scan timed out.");
-            scan_start();
         } break;
 
         default:
@@ -389,6 +372,7 @@ static void scan_init(void)
     };
     // nrf_drv_gpiote_in_config_t in_config_toggle = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(false);
 
+
     memset(&init_scan, 0, sizeof(init_scan));
     init_scan.connect_if_match = false;
     init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
@@ -401,24 +385,6 @@ static void scan_init(void)
 static void scan_start(void)
 {
     ret_code_t ret;
-    uint16_t len = 0;
-    char rssi[10] = {0};
-
-    /* Reset variable */
-    records_count = 0;
-    records_rssi = -120;
-
-    /* Receive max rssi */
-    uart_receive((uint8_t *)rssi, &len, 1000000);
-    if (len > 0)
-    {
-        rssi[len] = '\0';
-        records_rssi = atoi(rssi);
-        if (records_rssi == 0)
-        {
-            records_rssi = -120;
-        }
-    }
 
     ret = nrf_ble_scan_start(&m_scan);
     APP_ERROR_CHECK(ret);
@@ -433,6 +399,8 @@ static void scan_stop(void)
     ret_code_t ret;
 
     nrf_ble_scan_stop();
+    APP_ERROR_CHECK(ret);
+
 
     ret = bsp_indication_set(BSP_INDICATE_IDLE);
     APP_ERROR_CHECK(ret);
@@ -462,126 +430,4 @@ static uint32_t find_adv_name(const ble_gap_evt_adv_report_t *p_adv_report, uint
     }
 
     return NRF_ERROR_NOT_FOUND;
-}
-
-static void scan_transmit(void)
-{
-    uint8_t data[200] = {0};
-    uint8_t adv_data[63] = {0};
-    uint8_t mac[13] = {0};
-    uint8_t i, count;
-    uint16_t j;
-
-    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STARTTX);
-    
-    sprintf((char *)data, "{\"params\": {\"list\": [");
-    count = strlen((const char *)data);
-    for (i = 0; i < count; i++)
-    {
-        uart_transmit(data[i]);
-    }
-
-    /* Transmit 500 records to test */
-    // for(j = 0; j < RECORDS_COUNT_MAX; j++)
-    // {
-    //     // memset(data, 0, sizeof(data));
-    //     for (i = 0; i < sizeof(records[0].section.adv_data); i++)
-    //     {
-    //         sprintf((char *)(adv_data+i*2), "%02X", records[0].section.adv_data[i]);
-    //     }
-    //     for (i = 0; i < sizeof(records[0].section.mac); i++)
-    //     {
-    //         sprintf((char *)(mac+i*2), "%02X", records[0].section.mac[i]);
-    //     }
-    //     if (j == RECORDS_COUNT_MAX-1)
-    //     {
-    //         sprintf( 
-    //             (char *)data, 
-    //             "{\"rssi\": \"%d\","
-    //             "\"advdata\": \"%s\","
-    //             "\"scandata\": \"\","
-    //             "\"name\": \"%s\","
-    //             "\"mac\": \"%s\"}",
-    //             records[0].section.rssi,
-    //             adv_data,
-    //             records[0].section.name,
-    //             mac
-    //         );
-    //     }
-    //     else
-    //     {
-    //         sprintf(
-    //             (char *)data, 
-    //             "{\"rssi\": \"%d\","
-    //             "\"advdata\": \"%s\","
-    //             "\"scandata\": \"\","
-    //             "\"name\": \"%s\","
-    //             "\"mac\": \"%s\"},",
-    //             records[0].section.rssi,
-    //             adv_data,
-    //             records[0].section.name,
-    //             mac
-    //         );
-    //     }
-    //     count = strlen((const char *)data);
-    //     for (i = 0; i < count; i++)
-    //     {
-    //         uart_transmit(data[i]);
-    //     }
-    
-    // }
-
-    for(j = 0; j < records_count; j++)
-    {
-        // memset(data, 0, sizeof(data));
-        for (i = 0; i < sizeof(records[j].section.adv_data); i++)
-        {
-            sprintf((char *)(adv_data+i*2), "%02X", records[j].section.adv_data[i]);
-        }
-        for (i = 0; i < sizeof(records[j].section.mac); i++)
-        {
-            sprintf((char *)(mac+i*2), "%02X", records[j].section.mac[i]);
-        }
-        if (j == records_count-1)
-        {
-            sprintf( 
-                (char *)data, 
-                "{\"rssi\": \"%d\","
-                "\"advdata\": \"%s\","
-                "\"scandata\": \"\","
-                "\"name\": \"%s\","
-                "\"mac\": \"%s\"}",
-                records[j].section.rssi,
-                adv_data,
-                records[j].section.name,
-                mac
-            );
-        }
-        else
-        {
-            sprintf(
-                (char *)data, 
-                "{\"rssi\": \"%d\","
-                "\"advdata\": \"%s\","
-                "\"scandata\": \"\","
-                "\"name\": \"%s\","
-                "\"mac\": \"%s\"},",
-                records[j].section.rssi,
-                adv_data,
-                records[j].section.name,
-                mac
-            );
-        }
-        count = strlen((const char *)data);
-        for (i = 0; i < count; i++)
-        {
-            uart_transmit(data[i]);
-        }
-    }
-
-    uart_transmit(']');
-    uart_transmit('}');
-    uart_transmit('}');
-
-    nrf_uart_task_trigger(NRF_UART0, NRF_UART_TASK_STOPTX);
 }
